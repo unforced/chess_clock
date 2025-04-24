@@ -7,11 +7,18 @@ import 'package:device_info_plus/device_info_plus.dart'; // Import device_info_p
 import 'dart:convert'; // Import for jsonDecode
 import 'dart:typed_data'; // Import for Uint8List and BytesBuilder
 import 'package:tuple/tuple.dart'; // Keep tuple if needed elsewhere, maybe not required now
+import 'package:http/http.dart' as http; // <-- Add HTTP import
+import 'package:http_parser/http_parser.dart' as http_parser; // <-- Import with alias
 
 // BLE Specifications from BLE_SPECS.md
 const String targetDeviceName = "ChessClock";
 final Guid serviceUuid = Guid("4fafc201-1fb5-459e-8fcc-c5c9c331914b");
 final Guid characteristicUuid = Guid("beb5483e-36e1-4688-b7f5-ea07361b26a8");
+
+// --- Add your ngrok URL here --- 
+// IMPORTANT: Replace with the actual URL from your ngrok output
+const String visionServerUrl = "https://assuring-whole-bird.ngrok-free.app/analyze";
+// -----------------------------
 
 // Define a class to hold turn history data
 class TurnData {
@@ -21,6 +28,8 @@ class TurnData {
   final int p2TimeSec;
   Uint8List? imageBytes; // Make image bytes mutable or recreate TurnData?
                        // Let's make it mutable for simplicity here.
+  String? fen; // <-- Add FEN field
+  String? analysisError; // <-- Add error field
 
   TurnData({
     required this.turnNumber,
@@ -28,6 +37,8 @@ class TurnData {
     required this.p1TimeSec,
     required this.p2TimeSec,
     this.imageBytes,
+    this.fen,
+    this.analysisError,
   });
 
   @override
@@ -38,7 +49,9 @@ class TurnData {
       return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
     }
     String imageStatus = imageBytes == null ? "" : " (Image: ${imageBytes!.lengthInBytes} bytes)";
-    return 'Turn $turnNumber: P$playerMoved moved (P1: ${formatTime(p1TimeSec)}, P2: ${formatTime(p2TimeSec)})$imageStatus';
+    String fenStatus = fen == null ? "" : " (FEN available)";
+    String errorStatus = analysisError == null ? "" : " (Analysis Error)";
+    return 'Turn $turnNumber: P$playerMoved moved (P1: ${formatTime(p1TimeSec)}, P2: ${formatTime(p2TimeSec)})$imageStatus$fenStatus$errorStatus';
   }
 }
 
@@ -83,6 +96,7 @@ class BleService with ChangeNotifier {
   int get currentTurnPlayer => (_lastPlayerMoved == 1) ? 2 : 1; // Whose turn is it *now*
   List<List<TurnData>> get gameHistoryLog => List.unmodifiable(_gameHistoryLog); // Read-only view
   Uint8List? get latestImageBytes => _latestImageBytes;
+  String? get latestFen => _turnHistory.isNotEmpty ? _turnHistory.last.fen : null;
 
   BleService() {
     // Listen to adapter state changes
@@ -423,26 +437,45 @@ class BleService with ChangeNotifier {
               final receivedSize = receivedBytes.lengthInBytes;
               if (kDebugMode) print("Image End: Received $receivedSize bytes (Expected: $_expectedImageSize)");
 
-              if (receivedSize == _expectedImageSize) {
-                // Success!
-                _latestImageBytes = receivedBytes; // Store as the latest image
-                if (_turnHistory.isNotEmpty) {
-                  _turnHistory.last.imageBytes = receivedBytes; // Associate with last turn
-                  if (kDebugMode) print("Image reception complete. Stored as latest and associated with Turn ${_turnHistory.last.turnNumber}.");
-                  notifyListeners();
-                } else {
-                   if (kDebugMode) print("Warning: Image received but no turn history to associate it with (Stored as latest anyway).");
-                    notifyListeners(); // Still notify UI about the latest image
-                }
-              } else {
-                if (kDebugMode) print("Error: Image size mismatch! Expected $_expectedImageSize, got $receivedSize");
-                _latestImageBytes = null; // Clear latest image on error
+              TurnData? targetTurnData;
+              if (_turnHistory.isNotEmpty) {
+                   targetTurnData = _turnHistory.last;
               }
 
-              // Reset image reception state
+              bool sizeMatch = (receivedSize == _expectedImageSize);
+              bool receivedSomeData = (receivedSize > 0);
+
+              // --- MODIFIED LOGIC --- 
+              // Try to use the image if we received any data, even if size doesn't match
+              if (receivedSomeData) {
+                   _latestImageBytes = receivedBytes; // Store potentially partial image
+                   if (targetTurnData != null) {
+                       targetTurnData.imageBytes = receivedBytes;
+                       if (sizeMatch) {
+                           if (kDebugMode) print("Image reception complete (size matches). Associated with Turn ${targetTurnData.turnNumber}. Analyzing...");
+                           analyzeImageAndStoreFen(targetTurnData); // Analyze only if size matches perfectly
+                       } else {
+                           // Size mismatch, store image but set error and skip analysis
+                           targetTurnData.analysisError = "Image size mismatch (Expected: $_expectedImageSize, Got: $receivedSize)";
+                           if (kDebugMode) print("Error: Image size mismatch for Turn ${targetTurnData.turnNumber}. Storing partial image, skipping analysis.");
+                       }
+                   } else {
+                       if (kDebugMode) print("Warning: Image received (size mismatch: $sizeMatch) but no turn history to associate it with.");
+                   }
+              } else { // No data received at all
+                   if (kDebugMode) print("Error: No image data received despite image_start/image_end.");
+                   _latestImageBytes = null;
+                   if (targetTurnData != null) {
+                       targetTurnData.analysisError = "Image reception failed (no data)";
+                   }
+              }
+              // --- END MODIFIED LOGIC --- 
+
+              // Reset image reception state regardless of success/failure
               _isReceivingImage = false;
               _expectedImageSize = 0;
               _imageBytesBuilder.clear();
+              notifyListeners(); // Notify UI of potential changes (imageBytes, analysisError)
 
             } else {
                if (kDebugMode) print("Warning: Received unknown JSON format: $receivedJsonString");
@@ -593,5 +626,198 @@ class BleService with ChangeNotifier {
     _expectedImageSize = 0;
     _imageBytesBuilder.clear();
     super.dispose();
+  }
+
+  Future<void> analyzeImageAndStoreFen(TurnData currentTurnData) async {
+    if (currentTurnData.imageBytes == null) {
+      if (kDebugMode) print("[Analyze] No image bytes for Turn ${currentTurnData.turnNumber}");
+      return;
+    }
+
+    // Find previous FEN (if available)
+    String? previousFen;
+    int previousTurnIndex = _turnHistory.indexWhere((t) => t.turnNumber == currentTurnData.turnNumber - 1);
+    if (previousTurnIndex != -1 && _turnHistory[previousTurnIndex].fen != null) {
+      previousFen = _turnHistory[previousTurnIndex].fen;
+      if (kDebugMode) print("[Analyze] Found previous FEN for Turn ${currentTurnData.turnNumber - 1}: $previousFen");
+    } else {
+        if (kDebugMode) print("[Analyze] No previous FEN found for Turn ${currentTurnData.turnNumber}");
+    }
+
+    if (kDebugMode) print("[Analyze] Sending image for Turn ${currentTurnData.turnNumber} to $visionServerUrl");
+
+    try {
+      var request = http.MultipartRequest('POST', Uri.parse(visionServerUrl));
+      
+      // Add the image file
+      request.files.add(http.MultipartFile.fromBytes(
+        'file', 
+        currentTurnData.imageBytes!,
+        filename: 'turn_${currentTurnData.turnNumber}.jpg',
+        contentType: http_parser.MediaType('image', 'jpeg'), // <-- Use alias
+      ));
+
+      // Add previous FEN if available
+      if (previousFen != null) {
+        request.fields['previous_fen'] = previousFen;
+      }
+
+      var response = await request.send();
+      var responseBody = await response.stream.bytesToString();
+
+      if (response.statusCode == 200) {
+        var decodedResponse = jsonDecode(responseBody);
+        if (decodedResponse.containsKey('fen')) {
+          currentTurnData.fen = decodedResponse['fen'];
+          currentTurnData.analysisError = null; // Clear previous error if any
+          if (kDebugMode) print("[Analyze] Success! FEN for Turn ${currentTurnData.turnNumber}: ${currentTurnData.fen}");
+        } else {
+          currentTurnData.analysisError = "Server response missing 'fen' key.";
+          if (kDebugMode) print("[Analyze] Error: Server response missing 'fen' key for Turn ${currentTurnData.turnNumber}");
+        }
+      } else {
+        currentTurnData.analysisError = "Server Error ${response.statusCode}: $responseBody";
+        if (kDebugMode) print("[Analyze] Error ${response.statusCode} for Turn ${currentTurnData.turnNumber}: $responseBody");
+      }
+    } catch (e) {
+      currentTurnData.analysisError = "Network or parsing error: ${e.toString()}";
+      if (kDebugMode) print("[Analyze] Network/Parsing Error for Turn ${currentTurnData.turnNumber}: $e");
+    }
+    notifyListeners(); // Notify UI about the updated TurnData
+  }
+
+  void _onDataReceived(List<int> data) {
+    // Try decoding as JSON first
+    String receivedJsonString = "";
+    try {
+      receivedJsonString = utf8.decode(data, allowMalformed: false);
+      if (kDebugMode) print("Received JSON string: $receivedJsonString");
+      var decodedData = jsonDecode(receivedJsonString);
+
+      if (_isReceivingImage) {
+          // If we are expecting image data, receiving JSON means something is wrong
+          if (kDebugMode) print("Warning: Received JSON while expecting image data. Resetting image reception.");
+          _isReceivingImage = false;
+          _expectedImageSize = 0;
+          _imageBytesBuilder.clear();
+          // Process the JSON normally now
+      }
+
+      // --- Turn Update or Reset --- 
+      if (decodedData.containsKey('turn') && decodedData.containsKey('player')) {
+        // ... (existing turn update logic)
+        int turn = decodedData['turn'];
+        int player = decodedData['player'];
+        int p1Time = decodedData['p1Time'] ?? 0;
+        int p2Time = decodedData['p2Time'] ?? 0;
+
+        if (turn == 0 && player == 0) { // Detect reset condition
+            if (kDebugMode) print("Reset detected. Clearing history and latest image.");
+            _turnHistory.clear();
+            _latestImageBytes = null;
+            // Also reset image reception state in case it was stuck
+            _isReceivingImage = false;
+            _expectedImageSize = 0;
+            _imageBytesBuilder.clear();
+        } else {
+            if (kDebugMode) print("Turn Update: Turn $turn, Player $player, P1: $p1Time, P2: $p2Time");
+            _turnHistory.add(TurnData(
+                turnNumber: turn,
+                playerMoved: player,
+                p1TimeSec: p1Time,
+                p2TimeSec: p2Time,
+            ));
+        }
+        notifyListeners();
+
+      } else if (decodedData.containsKey('type') && decodedData['type'] == 'image_start'){
+           // --- Image Start ---
+            if (_isReceivingImage) {
+               if (kDebugMode) print("Warning: Received image_start while already receiving an image. Resetting.");
+            }
+            _expectedImageSize = decodedData['size'] ?? 0;
+            if (_expectedImageSize > 0) {
+              _isReceivingImage = true;
+              _imageBytesBuilder.clear();
+              if (kDebugMode) print("Image Start: Expecting $_expectedImageSize bytes.");
+            } else {
+              if (kDebugMode) print("Warning: Received image_start with invalid size: $_expectedImageSize");
+              _isReceivingImage = false; // Don't start if size is invalid
+            }
+
+      } else if (decodedData.containsKey('type') && decodedData['type'] == 'image_end') {
+           // --- Image End ---
+            if (!_isReceivingImage) {
+               if (kDebugMode) print("Warning: Received image_end without active image reception.");
+               return; // Ignore if not expecting image
+            }
+
+            final receivedBytes = _imageBytesBuilder.toBytes();
+            final receivedSize = receivedBytes.lengthInBytes;
+            if (kDebugMode) print("Image End: Received $receivedSize bytes (Expected: $_expectedImageSize)");
+
+            TurnData? targetTurnData;
+            if (_turnHistory.isNotEmpty) {
+                 targetTurnData = _turnHistory.last;
+            }
+
+            bool sizeMatch = (receivedSize == _expectedImageSize);
+            bool receivedSomeData = (receivedSize > 0);
+
+            // --- MODIFIED LOGIC --- 
+            // Try to use the image if we received any data, even if size doesn't match
+            if (receivedSomeData) {
+                 _latestImageBytes = receivedBytes; // Store potentially partial image
+                 if (targetTurnData != null) {
+                     targetTurnData.imageBytes = receivedBytes;
+                     if (sizeMatch) {
+                         if (kDebugMode) print("Image reception complete (size matches). Associated with Turn ${targetTurnData.turnNumber}. Analyzing...");
+                         analyzeImageAndStoreFen(targetTurnData); // Analyze only if size matches perfectly
+                     } else {
+                         // Size mismatch, store image but set error and skip analysis
+                         targetTurnData.analysisError = "Image size mismatch (Expected: $_expectedImageSize, Got: $receivedSize)";
+                         if (kDebugMode) print("Error: Image size mismatch for Turn ${targetTurnData.turnNumber}. Storing partial image, skipping analysis.");
+                     }
+                 } else {
+                     if (kDebugMode) print("Warning: Image received (size mismatch: $sizeMatch) but no turn history to associate it with.");
+                 }
+            } else { // No data received at all
+                 if (kDebugMode) print("Error: No image data received despite image_start/image_end.");
+                 _latestImageBytes = null;
+                 if (targetTurnData != null) {
+                     targetTurnData.analysisError = "Image reception failed (no data)";
+                 }
+            }
+            // --- END MODIFIED LOGIC --- 
+
+            // Reset image reception state regardless of success/failure
+            _isReceivingImage = false;
+            _expectedImageSize = 0;
+            _imageBytesBuilder.clear();
+            notifyListeners(); // Notify UI of potential changes (imageBytes, analysisError)
+
+      } else {
+         if (kDebugMode) print("Warning: Received unknown JSON format: $receivedJsonString");
+      }
+
+    } catch (e) {
+        // If not JSON, assume it's image data if we are expecting it
+        if (_isReceivingImage) {
+           // If expecting image data, append it
+           _imageBytesBuilder.add(data);
+           if (kDebugMode) {
+              final currentSize = _imageBytesBuilder.length;
+              final percent = _expectedImageSize > 0 ? (currentSize / _expectedImageSize * 100).toStringAsFixed(1) : "N/A";
+              // Print progress less frequently to avoid spamming logs
+              if (currentSize % (1024 * 5) == 0 || currentSize == _expectedImageSize) { // Print every 5KB or at the end
+                  print("Received image chunk: ${data.length} bytes. Total: $currentSize / $_expectedImageSize ($percent%)");
+              }
+           }
+        } else {
+            // If not expecting image data and not valid JSON, log as error
+             if (kDebugMode) print("Error: Received non-JSON data when not expecting image: ${data.length} bytes");
+             // You might want to attempt decoding with allowMalformed=true here if necessary
+        }
+    }
   }
 } 

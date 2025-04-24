@@ -31,21 +31,22 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Add these lines:
+  http: ^1.2.1 # Check pub.dev for latest version
+  flutter_chess_board: ^1.0.1 # Check pub.dev for latest version
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.6
 
   # BLE Communication
-  flutter_blue_plus: ^1.31.16 # From omi-minimal-fork
-  permission_handler: ^11.3.1 # For BLE permissions
-  device_info_plus: ^10.1.0 # Needed by permission_handler
+  flutter_blue_plus: ^1.15.10 # Make sure this is present or update as needed
+  permission_handler: ^11.3.1 # Make sure this is present or update as needed
+  device_info_plus: ^10.1.0 # Make sure this is present or update as needed
+  tuple: ^2.0.2 # Make sure this is present or update as needed
 
   # State Management
   provider: ^6.1.1 # From omi-minimal-fork
-
-  # Utilities
-  tuple: ^2.0.2 # Added for Selector optimization
 
 dev_dependencies:
   flutter_test:

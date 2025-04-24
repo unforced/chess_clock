@@ -1,30 +1,29 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' as material;
 import 'package:provider/provider.dart';
 import 'ble_service.dart'; // Import the BleService
 import 'package:tuple/tuple.dart';
-import 'package:flutter/foundation.dart'; // Import for kDebugMode
+import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter_chess_board/flutter_chess_board.dart'; // <-- Import chess board
 
 void main() {
-  runApp(
-    ChangeNotifierProvider(
-      create: (context) => BleService(),
-      child: const MyApp(),
-    ),
-  );
+  material.runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class MyApp extends material.StatelessWidget {
+  const MyApp({material.Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Chess Companion',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueGrey),
-        useMaterial3: true,
+  material.Widget build(material.BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (_) => BleService(),
+      child: material.MaterialApp(
+        title: 'Chess Companion',
+        theme: material.ThemeData(
+           colorScheme: material.ColorScheme.fromSeed(seedColor: material.Colors.blueGrey),
+           useMaterial3: true,
+        ),
+        home: const ChessClockScreen(), // Use ChessClockScreen as home
       ),
-      home: const ChessClockScreen(),
     );
   }
 }
@@ -37,51 +36,52 @@ String formatTime(int totalSeconds) {
   return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
 }
 
-class ChessClockScreen extends StatelessWidget {
-  const ChessClockScreen({super.key});
+// --- Main Screen showing connection or game state --- 
+class ChessClockScreen extends material.StatelessWidget {
+  const ChessClockScreen({material.Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Chess Clock Companion'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+  material.Widget build(material.BuildContext context) {
+    return material.Scaffold(
+      appBar: material.AppBar(
+        title: const material.Text('Chess Clock Companion'),
+        backgroundColor: material.Theme.of(context).colorScheme.inversePrimary,
         actions: [
-          // --- Game History Button ---
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: 'View Game History',
+          // Game History Button (navigates to GameHistoryScreen)
+          material.IconButton(
+            icon: const material.Icon(material.Icons.history),
+            tooltip: 'View Completed Games',
             onPressed: () {
-              Navigator.push(
+              material.Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const GameHistoryScreen()),
+                material.MaterialPageRoute(builder: (context) => const GameHistoryScreen()),
               );
             },
           ),
-          // Show connection status icon in AppBar
+          // Connection Status Icon
           Consumer<BleService>(
             builder: (context, bleService, child) {
-              IconData icon;
-              Color color;
+              material.IconData icon;
+              material.Color color;
               switch (bleService.connectionStatus) {
                 case BleConnectionStatus.connected:
-                  icon = Icons.bluetooth_connected;
-                  color = Colors.lightGreenAccent;
+                  icon = material.Icons.bluetooth_connected;
+                  color = material.Colors.green;
                   break;
                 case BleConnectionStatus.connecting:
                 case BleConnectionStatus.scanning:
-                  icon = Icons.bluetooth_searching;
-                  color = Colors.yellow;
+                  icon = material.Icons.bluetooth_searching;
+                  color = material.Colors.yellow.shade700;
                   break;
                 case BleConnectionStatus.disconnected:
                 default:
-                  icon = Icons.bluetooth_disabled;
-                  color = Colors.redAccent;
+                  icon = material.Icons.bluetooth_disabled;
+                  color = material.Colors.red;
                   break;
               }
-              return Padding(
-                padding: const EdgeInsets.only(right: 15.0),
-                child: Icon(icon, color: color),
+              return material.Padding(
+                padding: const material.EdgeInsets.only(right: 15.0),
+                child: material.Icon(icon, color: color),
               );
             },
           )
@@ -89,52 +89,49 @@ class ChessClockScreen extends StatelessWidget {
       ),
       body: Consumer<BleService>(
         builder: (context, bleService, child) {
-          // Show connection controls if not connected
           if (bleService.connectionStatus != BleConnectionStatus.connected) {
             return _buildConnectionView(context, bleService);
           }
-
-          // Show game state view if connected
           return _buildGameStateView(context, bleService);
         },
       ),
     );
   }
 
-  // --- Builds the view shown when not connected ---
-  Widget _buildConnectionView(BuildContext context, BleService bleService) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          Text(
+  // Builds the view shown when not connected
+  material.Widget _buildConnectionView(material.BuildContext context, BleService bleService) {
+    return material.Center(
+      child: material.Column(
+        mainAxisAlignment: material.MainAxisAlignment.center,
+        children: <material.Widget>[
+          material.Text(
             'Status: ${bleService.connectionStatus.toString().split('.').last}',
-            style: Theme.of(context).textTheme.headlineSmall,
+            style: material.Theme.of(context).textTheme.headlineSmall,
           ),
-          const SizedBox(height: 30),
+          const material.SizedBox(height: 30),
           if (bleService.connectionStatus == BleConnectionStatus.disconnected)
-            ElevatedButton.icon(
-              icon: const Icon(Icons.bluetooth_searching),
-              label: const Text('Scan for ChessClock'),
+            material.ElevatedButton.icon(
+              icon: const material.Icon(material.Icons.bluetooth_searching),
+              label: const material.Text('Scan for ChessClock'),
               onPressed: () {
                 try {
                   bleService.startScan();
                 } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error starting scan: $e')),
+                  material.ScaffoldMessenger.of(context).showSnackBar(
+                    material.SnackBar(content: material.Text('Error starting scan: $e')),
                   );
                 }
               },
             ),
           if (bleService.connectionStatus == BleConnectionStatus.scanning ||
               bleService.connectionStatus == BleConnectionStatus.connecting)
-            const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Column(
+            const material.Padding(
+              padding: material.EdgeInsets.all(16.0),
+              child: material.Column(
                 children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 10),
-                  Text("Searching..."),
+                  material.CircularProgressIndicator(),
+                  material.SizedBox(height: 10),
+                  material.Text("Searching..."),
                 ],
               ),
             ),
@@ -143,14 +140,14 @@ class ChessClockScreen extends StatelessWidget {
     );
   }
 
-  // --- Builds the main game state view when connected ---
-  Widget _buildGameStateView(BuildContext context, BleService bleService) {
-    final textTheme = Theme.of(context).textTheme;
+  // Builds the main game state view when connected
+  material.Widget _buildGameStateView(material.BuildContext context, BleService bleService) {
+    final textTheme = material.Theme.of(context).textTheme;
 
-    return Column(
+    return material.Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
+        material.Padding(
+          padding: const material.EdgeInsets.all(16.0),
           child: Selector<BleService, Tuple3<int, int, int?>>(
             selector: (_, service) => Tuple3(
               service.player1Time,
@@ -163,11 +160,10 @@ class ChessClockScreen extends StatelessWidget {
               final lastMoved = data.item3;
               final currentTurnPlayer = lastMoved == null ? 0 : (lastMoved == 1 ? 2 : 1);
               if (kDebugMode) {
-                  // UI Rebuild Log for Times/Turn
                   print("[UI BUILD Time Selector] P1: $p1Time, P2: $p2Time, LastMoved: $lastMoved, CurrentTurn: $currentTurnPlayer");
               }
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
+              return material.Row(
+                mainAxisAlignment: material.MainAxisAlignment.spaceAround,
                 children: [
                   _buildPlayerTimeCard(context, "Player 1", p1Time, currentTurnPlayer == 1),
                   _buildPlayerTimeCard(context, "Player 2", p2Time, currentTurnPlayer == 2),
@@ -179,92 +175,54 @@ class ChessClockScreen extends StatelessWidget {
         Consumer<BleService>(
              builder: (context, service, child) {
                 if (service.lastPlayerMoved == 0) {
-                   // Changed message to be neutral
-                   return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8.0),
-                      child: Text("Game Ready", style: textTheme.titleMedium?.copyWith(color: Colors.green)),
+                   return material.Padding(
+                      padding: const material.EdgeInsets.symmetric(vertical: 8.0),
+                      child: material.Text("Game Ready", style: textTheme.titleMedium?.copyWith(color: material.Colors.green)),
                     );
                 } else {
-                  return const SizedBox.shrink();
+                  return const material.SizedBox.shrink();
                 }
             },
         ),
-        Divider(),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Text("Turn History", style: textTheme.titleLarge),
+        material.Divider(),
+        material.Padding(
+          padding: const material.EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: material.Text("Current Game Log", style: textTheme.titleLarge), // Title for current game log
         ),
-        Expanded(
-          child: Consumer<BleService>(
+        material.Expanded(
+          child: Consumer<BleService>( // Listen to changes for the history list
             builder: (context, service, child) {
               final history = service.turnHistory;
                if (kDebugMode) {
-                  // UI Rebuild Log for History
                   print("[UI BUILD History Consumer] History has ${history.length} items.");
-                  // Optionally log the actual items if needed for deeper debugging
-                  // for(var i=0; i < history.length; i++) {
-                  //   print("[UI BUILD History Consumer] Item $i: ${history[i]}");
-                  // }
                }
               return history.isEmpty
-                  ? const Center(child: Text("No moves recorded yet."))
-                  : ListView.builder(
+                  ? const material.Center(child: material.Text("No moves recorded yet."))
+                  : material.ListView.builder(
                       itemCount: history.length,
                       itemBuilder: (context, index) {
-                        // Build items in reverse order to show latest first
-                        final turnData = history[history.length - 1 - index];
+                        final turnData = history[history.length - 1 - index]; // Show latest first
                         if (kDebugMode) {
                            print("[UI BUILD History ItemBuilder] Building item for Turn ${turnData.turnNumber}");
                         }
-                        return Card(
-                           margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                           child: Padding(
-                              padding: const EdgeInsets.all(8.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(turnData.toString(), style: textTheme.bodyMedium),
-                                  // Display Image IN the history item if available
-                                  if (turnData.imageBytes != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 8.0),
-                                      child: Center(
-                                        child: ConstrainedBox(
-                                          constraints: BoxConstraints(
-                                            maxHeight: MediaQuery.of(context).size.height * 0.2, // Slightly smaller height in list
-                                          ),
-                                          child: Image.memory(
-                                            turnData.imageBytes!,
-                                            fit: BoxFit.contain,
-                                            errorBuilder: (context, error, stackTrace) {
-                                              if (kDebugMode) print("[UI BUILD History Image Error] Turn ${turnData.turnNumber}: $error");
-                                              return const Text('Error loading image', style: TextStyle(color: Colors.red));
-                                            },
-                                            gaplessPlayback: true,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                           ),
-                        );
+                        // Use the TurnHistoryCard for each item
+                        return TurnHistoryCard(turnData: turnData);
                       },
                     );
               },
           )
         ),
-        Divider(),
-        Padding(
-          padding: const EdgeInsets.all(16.0),
+        material.Divider(),
+        material.Padding(
+          padding: const material.EdgeInsets.all(16.0),
           child: Consumer<BleService>(
              builder: (context, service, child) {
-                return ElevatedButton.icon(
-                    icon: const Icon(Icons.bluetooth_disabled),
-                    label: const Text('Disconnect'),
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.redAccent,
-                        foregroundColor: Colors.white),
+                return material.ElevatedButton.icon(
+                    icon: const material.Icon(material.Icons.bluetooth_disabled),
+                    label: const material.Text('Disconnect'),
+                    style: material.ElevatedButton.styleFrom(
+                        backgroundColor: material.Colors.redAccent,
+                        foregroundColor: material.Colors.white),
                     onPressed: () => service.disconnect(),
                   );
               },
@@ -274,28 +232,28 @@ class ChessClockScreen extends StatelessWidget {
     );
   }
 
-  // --- Helper to build player time display card ---
-  Widget _buildPlayerTimeCard(
-      BuildContext context, String playerName, int timeSeconds, bool isTurn) {
-    final textTheme = Theme.of(context).textTheme;
-    return Card(
+  // Helper to build player time display card
+  material.Widget _buildPlayerTimeCard(
+      material.BuildContext context, String playerName, int timeSeconds, bool isTurn) {
+    final textTheme = material.Theme.of(context).textTheme;
+    return material.Card(
       elevation: isTurn ? 6.0 : 2.0,
-      color: isTurn ? Colors.lightBlue[100] : null,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 15.0),
-        child: Column(
+      color: isTurn ? material.Colors.lightBlue[100] : null,
+      child: material.Padding(
+        padding: const material.EdgeInsets.symmetric(horizontal: 20.0, vertical: 15.0),
+        child: material.Column(
           children: [
-            Text(playerName, style: textTheme.titleMedium),
-            const SizedBox(height: 5),
-            Text(
+            material.Text(playerName, style: textTheme.titleMedium),
+            const material.SizedBox(height: 5),
+            material.Text(
               formatTime(timeSeconds),
               style: textTheme.headlineMedium?.copyWith(
-                fontWeight: isTurn ? FontWeight.bold : FontWeight.normal,
-                color: isTurn ? Colors.blue[800] : null,
+                fontWeight: isTurn ? material.FontWeight.bold : material.FontWeight.normal,
+                color: isTurn ? material.Colors.blue[800] : null,
               ),
             ),
-            const SizedBox(height: 5),
-            if (isTurn) const Text("TURN", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))
+            const material.SizedBox(height: 5),
+            if (isTurn) const material.Text("TURN", style: material.TextStyle(color: material.Colors.blue, fontWeight: material.FontWeight.bold))
           ],
         ),
       ),
@@ -303,44 +261,43 @@ class ChessClockScreen extends StatelessWidget {
   }
 }
 
-// --- New Screen to Display Game History Log ---
-class GameHistoryScreen extends StatelessWidget {
-  const GameHistoryScreen({super.key});
+// --- New Screen to Display Completed Game History Log --- 
+class GameHistoryScreen extends material.StatelessWidget {
+  const GameHistoryScreen({material.Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Completed Game History'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+  material.Widget build(material.BuildContext context) {
+    return material.Scaffold(
+      appBar: material.AppBar(
+        title: const material.Text('Completed Game History'),
+        backgroundColor: material.Theme.of(context).colorScheme.inversePrimary,
       ),
       body: Consumer<BleService>(
         builder: (context, bleService, child) {
           final log = bleService.gameHistoryLog;
 
           if (log.isEmpty) {
-            return const Center(
-              child: Text("No completed games recorded yet."),
+            return const material.Center(
+              child: material.Text("No completed games recorded yet."),
             );
           }
 
-          return ListView.builder(
+          return material.ListView.builder(
             itemCount: log.length,
             itemBuilder: (context, index) {
               final gameTurns = log[log.length - 1 - index];
               final gameNumber = log.length - index;
               final turnCount = gameTurns.length;
 
-              return ListTile(
-                leading: CircleAvatar(child: Text('$gameNumber')),
-                title: Text('Game $gameNumber'),
-                subtitle: Text('$turnCount turns'),
-                trailing: const Icon(Icons.arrow_forward_ios), // Indicate tappable
+              return material.ListTile(
+                leading: material.CircleAvatar(child: material.Text('$gameNumber')),
+                title: material.Text('Game $gameNumber'),
+                subtitle: material.Text('$turnCount turns'),
+                trailing: const material.Icon(material.Icons.arrow_forward_ios),
                 onTap: () {
-                   // Navigate to detailed game view
-                   Navigator.push(
+                   material.Navigator.push(
                      context,
-                     MaterialPageRoute(
+                     material.MaterialPageRoute(
                        builder: (context) => GameDetailScreen(
                          gameNumber: gameNumber,
                          turnHistory: gameTurns,
@@ -357,68 +314,203 @@ class GameHistoryScreen extends StatelessWidget {
   }
 }
 
-// --- Screen for Detailed Game Turn Log ---
-class GameDetailScreen extends StatelessWidget {
+// --- Screen for Detailed Turn Log of a Completed Game --- 
+class GameDetailScreen extends material.StatelessWidget {
   final int gameNumber;
-  final List<TurnData> turnHistory;
+  final List<TurnData> turnHistory; // Use the list passed from GameHistoryScreen
 
   const GameDetailScreen({
-    super.key,
+    material.Key? key,
     required this.gameNumber,
     required this.turnHistory,
-  });
+  }) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Game $gameNumber Details (${turnHistory.length} turns)'), // Show turn count in title
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+  material.Widget build(material.BuildContext context) {
+    return material.Scaffold(
+      appBar: material.AppBar(
+        title: material.Text('Game $gameNumber Details (${turnHistory.length} turns)'),
+        backgroundColor: material.Theme.of(context).colorScheme.inversePrimary,
       ),
       body: turnHistory.isEmpty
-          ? const Center(child: Text("No turns recorded for this game."))
-          : ListView.builder(
+          ? const material.Center(child: material.Text("No turns recorded for this game."))
+          // Use ListView here, not PageView, to show all turns of the *completed* game
+          : material.ListView.builder(
               itemCount: turnHistory.length,
               itemBuilder: (context, index) {
-                final turnData = turnHistory[index];
-                return Card( // Wrap each turn in a Card for better visual separation
-                  margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Display Turn Info Text
-                        Text(
-                           turnData.toString(), // Already includes image size if present
-                           style: Theme.of(context).textTheme.bodyMedium,
-                         ),
-                        // Display Image if it exists
-                        if (turnData.imageBytes != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8.0),
-                            child: Center(
-                              child: Image.memory(
-                                turnData.imageBytes!,
-                                fit: BoxFit.contain,
-                                height: 200, // Add temporary fixed height for debugging
-                                errorBuilder: (context, error, stackTrace) {
-                                   // Log the error
-                                   if (kDebugMode) {
-                                     print("[UI BUILD Image Error] Failed to load image for Turn ${turnData.turnNumber}: $error");
-                                   }
-                                   return const Text('Error loading image', style: TextStyle(color: Colors.red));
-                                },
-                                gaplessPlayback: true,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                );
+                // Show turns in chronological order for completed games
+                final turnData = turnHistory[index]; 
+                // Use the same TurnHistoryCard for display consistency
+                return TurnHistoryCard(turnData: turnData);
               },
             ),
     );
+  }
+}
+
+// --- StatefulWidget for the Card content displaying Image/Board --- 
+class TurnHistoryCard extends material.StatefulWidget {
+  final TurnData turnData;
+
+  const TurnHistoryCard({material.Key? key, required this.turnData}) : super(key: key);
+
+  @override
+  _TurnHistoryCardState createState() => _TurnHistoryCardState();
+}
+
+class _TurnHistoryCardState extends material.State<TurnHistoryCard> {
+  bool _showBoard = true; 
+
+  @override
+  void initState() {
+    super.initState();
+    final turnData = widget.turnData;
+    final hasFen = turnData.fen != null && turnData.analysisError == null;
+    final hasImage = turnData.imageBytes != null;
+    if (!hasFen) _showBoard = false;
+    if (hasFen && !hasImage) _showBoard = true;
+  }
+  
+  // Add didUpdateWidget to handle cases where FEN arrives after initial build
+  @override
+  void didUpdateWidget(covariant TurnHistoryCard oldWidget) {
+      super.didUpdateWidget(oldWidget);
+      // If the turn data object itself changed (e.g. FEN was added)
+      if (widget.turnData != oldWidget.turnData) {
+          final hasFen = widget.turnData.fen != null && widget.turnData.analysisError == null;
+          final hasImage = widget.turnData.imageBytes != null;
+          bool shouldShowBoard = true;
+          if (!hasFen) shouldShowBoard = false;
+          if (hasFen && !hasImage) shouldShowBoard = true;
+          // Update state only if the calculated preference changed
+          if (_showBoard != shouldShowBoard) {
+              // No need for addPostFrameCallback here as it's a reaction to prop change
+              setState(() {
+                _showBoard = shouldShowBoard;
+              });
+          }
+      }
+  }
+
+
+  @override
+  material.Widget build(material.BuildContext context) {
+    final textTheme = material.Theme.of(context).textTheme;
+    final turnData = widget.turnData; 
+    final hasFen = turnData.fen != null && turnData.analysisError == null;
+    final hasImage = turnData.imageBytes != null;
+
+    // This recalculation in build might be redundant if initState/didUpdateWidget work correctly
+    // bool shouldShowBoard = true;
+    // if (!hasFen) shouldShowBoard = false;
+    // if (hasFen && !hasImage) shouldShowBoard = true;
+    // if (_showBoard != shouldShowBoard && mounted) {
+    //     WidgetsBinding.instance.addPostFrameCallback((_) {
+    //        if (mounted) { 
+    //            setState(() { _showBoard = shouldShowBoard; });
+    //        }
+    //     });
+    // }
+
+    return material.Card(
+      margin: const material.EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+      child: material.Padding(
+        padding: const material.EdgeInsets.all(8.0),
+        child: material.Column(
+          crossAxisAlignment: material.CrossAxisAlignment.start,
+          children: [
+            material.Row(
+              mainAxisAlignment: material.MainAxisAlignment.spaceBetween,
+              children: [
+                material.Expanded(
+                    child: material.Text(turnData.toString(), style: textTheme.bodyMedium)
+                ),
+                // Condition 1: Show toggle button
+                if (hasFen && hasImage)
+                  material.IconButton(
+                    icon: material.Icon(_showBoard ? material.Icons.image : material.Icons.grid_on),
+                    tooltip: _showBoard ? 'Show Image' : 'Show Board',
+                    onPressed: () {
+                      setState(() {
+                        _showBoard = !_showBoard;
+                      });
+                    },
+                  ),
+                // Condition 2: Show retry button (only if Condition 1 is false)
+                if (!hasFen && turnData.analysisError != null && hasImage)
+                    material.IconButton(
+                      icon: material.Icon(material.Icons.refresh, color: material.Colors.orange), // Direct Color usage okay here
+                      tooltip: 'Retry Analysis',
+                      onPressed: () {
+                        // Ensure context is available if called from here
+                        Provider.of<BleService>(context, listen: false).analyzeImageAndStoreFen(turnData);
+                      },
+                    ),
+              ],
+            ),
+            const material.SizedBox(height: 8),
+            material.Center(
+              child: material.ConstrainedBox(
+                constraints: material.BoxConstraints(
+                  maxHeight: material.MediaQuery.of(context).size.height * 0.4,
+                  maxWidth: material.MediaQuery.of(context).size.width * 0.9,
+                ),
+                child: _buildContent(hasFen, hasImage), 
+              ),
+            ),
+            // Display error message slightly differently
+            if (turnData.analysisError != null)
+              material.Padding(
+                padding: const material.EdgeInsets.only(top: 4.0),
+                child: material.Text(
+                  "Analysis Error: ${turnData.analysisError}",
+                  style: const material.TextStyle(color: material.Colors.orange, fontSize: 12),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  material.Widget _buildContent(bool hasFen, bool hasImage) {
+    double boardSize = material.MediaQuery.of(context).size.width * 0.85;
+    boardSize = boardSize.clamp(0, material.MediaQuery.of(context).size.height * 0.4);
+
+    if (_showBoard && hasFen) {
+      try {
+        return ChessBoard(
+            key: material.ValueKey(widget.turnData.fen), 
+            controller: ChessBoardController.fromFEN(widget.turnData.fen!),
+            size: boardSize,
+            enableUserMoves: false,
+            boardOrientation: PlayerColor.white, // Default orientation
+         );
+      } catch (e) {
+         if (hasImage) {
+             return _buildImageWidget(); // Fallback to image if board fails
+         } else {
+             return material.Text('Error displaying FEN: ${e.toString()}', style: const material.TextStyle(color: material.Colors.red));
+         }
+      }
+    } else if (hasImage) {
+      return _buildImageWidget();
+    } else {
+      // If no image and no valid FEN (or FEN failed)
+      return const material.Center(child: material.Text('No image or board available.', style: material.TextStyle(fontStyle: material.FontStyle.italic)));
+    }
+  }
+  
+  material.Widget _buildImageWidget() {
+     return material.Image.memory(
+        widget.turnData.imageBytes!, // Assumes hasImage is true if called
+        fit: material.BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) {
+          // Fix: Use turnNumber
+          if (kDebugMode) print("[UI BUILD History Image Error] Turn ${widget.turnData.turnNumber}: $error"); 
+          return const material.Text('Error loading image', style: material.TextStyle(color: material.Colors.red));
+        },
+        gaplessPlayback: true, 
+      );
   }
 }
