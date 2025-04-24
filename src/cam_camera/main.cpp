@@ -87,7 +87,10 @@ void loop() {
     cmd.trim(); // Remove potential whitespace/newlines
     Serial.printf("Received command: '%s'\n", cmd.c_str()); // Debug echo
     if (cmd == "SNAP") {
-       Serial.println("SNAP command received, taking photo..."); // Debug
+       Serial.println("SNAP command received, taking photo..."); // Restore original debug message
+       // Serial.println("ACK"); // <<< Remove temporary ACK
+       // /* <<< Remove start comment
+       // --- Original Photo Logic Restored ---
        camera_fb_t * fb = esp_camera_fb_get();
        if (fb) {
           // Send size back via Serial
@@ -102,6 +105,7 @@ void loop() {
           Serial.println("ERROR:CaptureFail"); // Send error back via Serial
           Serial.println("Camera capture failed"); // Debug
        }
+       // */ <<< Remove end comment
     } else {
        Serial.printf("Unknown command: %s\n", cmd.c_str()); // Debug
     }

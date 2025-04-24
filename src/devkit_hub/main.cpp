@@ -8,6 +8,9 @@
 #include <HardwareSerial.h> // <<< ADDED for Serial2
 // #include "esp_camera.h" // <<< REMOVED Camera Header
 
+// --- Debugging Flags ---
+#define USE_LCD 0 // Set to 1 to enable LCD, 0 to disable
+
 // --- Pin Definitions ---
 // Define button pins
 const int BTN_RESET_PIN = 4;  // Use Pin 4 for Reset
@@ -20,9 +23,11 @@ const int BUTTON_COUNT = 3;   // We have 3 buttons
 ... [removed camera pins] ...
 #define PCLK_GPIO_NUM     22 // Conflicts with default I2C */
 
+#if USE_LCD
 // I2C Pins for LCD
 const int I2C_SDA_PIN = 21; // Standard ESP32 SDA pin
 const int I2C_SCL_PIN = 22; // Standard ESP32 SCL pin
+#endif
 
 // Serial Pins for ESP32-CAM Communication
 const int CAM_SERIAL_RX_PIN = 16; // Serial2 RX <- CAM TX (GPIO1)
@@ -32,16 +37,20 @@ const int CAM_SERIAL_TX_PIN = 17; // Serial2 TX -> CAM RX (GPIO3)
 // camera_config_t camera_config;
 
 // --- Constants ---
-const int LCD_ADDR = 0x27;      // <<< Double check this with I2C Scanner if needed!
-const int LCD_COLS = 16;        // LCD columns
-const int LCD_ROWS = 2;         // LCD rows
+#if USE_LCD
+const int LCD_ADDR = 0x27;      
+const int LCD_COLS = 16;        
+const int LCD_ROWS = 2;         
+#endif
 const unsigned long INITIAL_TIME_MS = 9 * 60 * 1000L; // 9 minutes in milliseconds
 const unsigned long DEBOUNCE_DELAY = 50; // Debounce time in milliseconds
 // #define BLE_CHUNK_SIZE 20 // <<< REMOVED - Not needed for state updates
 
 
 // --- Global Variables ---
-LiquidCrystal_I2C lcd(LCD_ADDR, LCD_COLS, LCD_ROWS); // <<< LCD Object Enabled
+#if USE_LCD
+LiquidCrystal_I2C lcd(LCD_ADDR, LCD_COLS, LCD_ROWS); 
+#endif
 HardwareSerial SerialCam(2); // Use UART2 for ESP32-CAM
 
 // Buffer for receiving camera image
@@ -107,12 +116,15 @@ void handleButtons(); // Changed back from handleControlButton
 void resetGame();
 void startGame(int playerWhoPressedButton);
 void switchPlayer(int nextPlayerWhoseClockStarts);
-void updateDisplay(); // LCD
-void forceUpdateDisplay(); // LCD
-void writeToLCD(); // LCD
-void formatTime(unsigned long time_ms, char* buffer, size_t bufferSize); // Used by LCD
+void updateDisplay(); // LCD <<< Prototype restored
+void forceUpdateDisplay(); // LCD <<< Prototype restored
+#if USE_LCD
+void writeToLCD(); // LCD <<< Prototype restored
+#endif
+void formatTime(unsigned long time_ms, char* buffer, size_t bufferSize); // <<< Prototype restored
 void sendBleStateUpdate(int playerMoved, unsigned long p1TimeMs, unsigned long p2TimeMs);
-size_t requestAndReceiveImage(); // <<< ADDED Prototype
+size_t requestAndReceiveImage(); 
+void sendImageOverBle(const uint8_t* buffer, size_t size); 
 // void configCamera(); // <<< REMOVED Camera Config Prototype
 // void takePhoto();    // <<< REMOVED Take Photo Prototype
 
@@ -120,18 +132,21 @@ size_t requestAndReceiveImage(); // <<< ADDED Prototype
 // --- Setup Function (Restored 3-button + LCD) ---
 void setup() {
   Serial.begin(115200);
-  delay(1000);
-  Serial.println("\n\nChess Clock Starting (ESP32 DevKit Hub)...");
+  delay(1500);
+  // Use a very simple print statement
+  Serial.println("\n\nChess Clock Starting..."); 
 
   // Initialize Serial2 for ESP32-CAM communication
   SerialCam.begin(115200, SERIAL_8N1, CAM_SERIAL_RX_PIN, CAM_SERIAL_TX_PIN);
   Serial.println("Serial2 for CAM Initialized (RX:16, TX:17).");
 
+#if USE_LCD
   // --- Initialize I2C and LCD ---
-  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN); // Explicitly set pins
-  lcd.init();                         // Initialize the LCD
-  lcd.backlight();                    // Turn on the backlight
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  lcd.init();
+  lcd.backlight();
   Serial.println("LCD Initialized.");
+#endif
 
   // Setup Buttons (Restored for 3 buttons)
   for (int i = 0; i < BUTTON_COUNT; i++) {
@@ -167,7 +182,7 @@ void setup() {
 
   // --- Initialize BLE (Keep State Characteristic Only) ---
   Serial.println("Starting BLE setup...");
-  BLEDevice::init("ChessClockHub"); // Changed name slightly for clarity
+  BLEDevice::init("ChessClock"); 
   Serial.println("BLEDevice::init() done.");
   pServer = BLEDevice::createServer();
   Serial.println("BLEDevice::createServer() done.");
@@ -185,15 +200,6 @@ void setup() {
                     );
   pStateCharacteristic->addDescriptor(new BLE2902());
   Serial.println("pStateCharacteristic created.");
-
-  // Create Image Data Characteristic <<< REMOVED
-  /* pImageDataCharacteristic = pService->createCharacteristic(
-                      IMAGE_DATA_CHARACTERISTIC_UUID,
-                      BLECharacteristic::PROPERTY_READ   |
-                      BLECharacteristic::PROPERTY_NOTIFY
-                    );
-  pImageDataCharacteristic->addDescriptor(new BLE2902());
-  Serial.println("pImageDataCharacteristic created."); */
 
   pStateCharacteristic->setValue("BLE Ready");
   Serial.println("pStateCharacteristic->setValue() done.");
@@ -213,7 +219,9 @@ void setup() {
   // Initialize Game State
   lastUpdateTime = millis();
   resetGame(); // Start in reset state initially
-  forceUpdateDisplay(); // Force initial LCD update
+#if USE_LCD
+  forceUpdateDisplay(); // Update LCD on startup if enabled
+#endif
 
   Serial.println("Setup Complete. Entering loop...");
 }
@@ -256,19 +264,26 @@ void loop() {
    }
    lastUpdateTime = currentTime;
 
-   updateDisplay(); // Restore LCD update in loop
+#if USE_LCD
+   updateDisplay(); // Update LCD in loop if enabled
+#endif
 
   // Handle BLE Disconnection/Reconnection
-   if (!deviceConnected && oldDeviceConnected) {
-       delay(500); 
-       pServer->startAdvertising();
-       Serial.println("Restarting BLE advertising");
-       oldDeviceConnected = deviceConnected;
-   }
-   if (deviceConnected && !oldDeviceConnected) {
-       oldDeviceConnected = deviceConnected;
-       Serial.println("Device connected callback received.");
-   }
+  if (!deviceConnected && oldDeviceConnected) {
+      delay(500); 
+      // Ensure pServer is valid before trying to use it
+      if (pServer != nullptr) {
+          pServer->startAdvertising(); 
+          Serial.println("Restarting BLE advertising");
+      } else {
+          Serial.println("Warning: pServer is null, cannot restart advertising.");
+      }
+      oldDeviceConnected = deviceConnected;
+  }
+  if (deviceConnected && !oldDeviceConnected) {
+      oldDeviceConnected = deviceConnected;
+      Serial.println("Device connected callback received.");
+  }
      
   delay(1); 
 }
@@ -312,7 +327,9 @@ void handleButtons() {
                         }
                         // Ignore if P1's clock is running or game over
                     }
-                    forceUpdateDisplay(); // Update display immediately on button press
+#if USE_LCD
+                    forceUpdateDisplay(); // Update LCD on button press if enabled
+#endif
                 }
             }
         }
@@ -336,38 +353,43 @@ void startGame(int playerWhoPressedButton) {
         lastUpdateTime = millis(); // Reset timer start point
         int runningPlayer = (playerWhoPressedButton == 1) ? 2 : 1;
         Serial.printf("Game Started - Running P%d\n", runningPlayer);
-        // forceUpdateDisplay(); // Already called in handleButtons
-        // Send state update indicating whose turn it IS (opposite of who pressed)
-        sendBleStateUpdate(runningPlayer, player1Time, player2Time);
+        // Send state update according to Spec for startGame:
+        // "player_moved indicates the player whose clock *isn't* running."
+        int playerNotRunning = (playerWhoPressedButton == 1) ? 1 : 2;
+        sendBleStateUpdate(playerNotRunning, player1Time, player2Time);
 
         // Request image after starting game
-        size_t receivedBytes = requestAndReceiveImage();
-        if (receivedBytes > 0) {
+        size_t receivedBytes = requestAndReceiveImage(); // <<< Re-enable CAM comms
+        if (receivedBytes > 0) {                       // <<< Re-enable CAM comms
            Serial.printf("Successfully received %zu image bytes after game start.\n", receivedBytes);
-           // TODO: Process/send imageBuffer data (e.g., via BLE)
-        } else {
+           sendImageOverBle(imageBuffer, receivedBytes); // <<< Re-enable CAM comms
+        } else {                                       // <<< Re-enable CAM comms
            Serial.println("Failed to receive image after game start.");
-        }
+        }                                              // <<< Re-enable CAM comms
     }
 }
 
 void switchPlayer(int nextPlayerWhoseClockStarts) {
     if ((currentState == RUNNING_P1 && nextPlayerWhoseClockStarts == 2) ||
         (currentState == RUNNING_P2 && nextPlayerWhoseClockStarts == 1)) {
+        
+        int playerWhoseTurnEnded = (nextPlayerWhoseClockStarts == 1) ? 2 : 1; // Calculate who just finished
+        
         currentState = (nextPlayerWhoseClockStarts == 1) ? RUNNING_P1 : RUNNING_P2;
         lastUpdateTime = millis(); // Reset timer start point for the new player
-        Serial.printf("Switched Player - Running P%d\n", nextPlayerWhoseClockStarts);
-        // forceUpdateDisplay(); // Already called in handleButtons
-        sendBleStateUpdate(nextPlayerWhoseClockStarts, player1Time, player2Time);
+        Serial.printf("Switched Player - Running P%d (Player %d finished)\n", nextPlayerWhoseClockStarts, playerWhoseTurnEnded);
+        
+        // Send BLE update indicating whose turn ENDED, per spec
+        sendBleStateUpdate(playerWhoseTurnEnded, player1Time, player2Time); 
 
         // Request image after switching player
-        size_t receivedBytes = requestAndReceiveImage();
-        if (receivedBytes > 0) {
+        size_t receivedBytes = requestAndReceiveImage(); // <<< Re-enable CAM comms
+        if (receivedBytes > 0) {                       // <<< Re-enable CAM comms
            Serial.printf("Successfully received %zu image bytes after player switch.\n", receivedBytes);
-           // TODO: Process/send imageBuffer data (e.g., via BLE)
-        } else {
+           sendImageOverBle(imageBuffer, receivedBytes); // <<< Re-enable CAM comms
+        } else {                                       // <<< Re-enable CAM comms
            Serial.println("Failed to receive image after player switch.");
-        }
+        }                                              // <<< Re-enable CAM comms
     }
 }
 
@@ -391,26 +413,26 @@ void updateDisplay() {
         formatTime(player1Time, timeBuffer1, sizeof(timeBuffer1));
         formatTime(player2Time, timeBuffer2, sizeof(timeBuffer2));
 
-        lcd.setCursor(0, 0); // First line
+#if USE_LCD
+        lcd.setCursor(0, 0);
         lcd.print("P1:");
         lcd.print(timeBuffer1);
-        lcd.print(" "); // Padding
+        lcd.print(" "); 
 
-        lcd.setCursor(0, 1); // Second line
+        lcd.setCursor(0, 1);
         lcd.print("P2:");
         lcd.print(timeBuffer2);
-        lcd.print(" "); // Padding
+        lcd.print(" "); 
 
-        // Indicate Active Player or Game State
-        lcd.setCursor(13, 0); // Position for indicators
+        lcd.setCursor(13, 0); 
         if (currentState == RUNNING_P1) {
-            lcd.print("<--"); // P1 Active
+            lcd.print("<--"); 
             lcd.setCursor(13, 1);
             lcd.print("   ");
         } else if (currentState == RUNNING_P2) {
             lcd.print("   ");
             lcd.setCursor(13, 1);
-            lcd.print("<--"); // P2 Active
+            lcd.print("<--"); 
         } else if (currentState == IDLE) {
             lcd.print("IDLE");
             lcd.setCursor(13, 1);
@@ -418,8 +440,9 @@ void updateDisplay() {
         } else if (currentState == GAME_OVER) {
             lcd.print("OVER");
             lcd.setCursor(13, 1);
-            lcd.print(player1Time == 0 ? "P2 W" : "P1 W"); // Show winner briefly
+            lcd.print(player1Time == 0 ? "P2 W" : "P1 W"); 
         }
+#endif // USE_LCD specific calls
 
         lastDisplayUpdate = currentTime;
         lastDisplayedState = currentState;
@@ -429,8 +452,10 @@ void updateDisplay() {
 }
 
 void forceUpdateDisplay() {
-    lastDisplayedState = (GameState)-1; // Force updateDisplay to run fully
+#if USE_LCD
+    lastDisplayedState = (GameState)-1; // Force updateDisplay condition
     updateDisplay();
+#endif
 }
 
 // --- formatTime (Restored) ---
@@ -446,29 +471,30 @@ void formatTime(unsigned long time_ms, char* buffer, size_t bufferSize) {
 
 // --- sendBleStateUpdate (Adjusted Characteristic) ---
 void sendBleStateUpdate(int playerMoved, unsigned long p1TimeMs, unsigned long p2TimeMs) {
-    if (deviceConnected) {
-        // Format: "STATE:P<player>:T1=<time1>:T2=<time2>"
-        // player 0 = reset/idle, 1 = P1 moved/active, 2 = P2 moved/active, 3 = Game Over P1 Wins, 4 = Game Over P2 Wins
-        int stateCode = 0;
-        if (currentState == RUNNING_P1) stateCode = 1;
-        else if (currentState == RUNNING_P2) stateCode = 2;
-        else if (currentState == GAME_OVER) stateCode = (player1Time == 0) ? 4 : 3; // 4=P2 Wins, 3=P1 Wins
+    if (deviceConnected && pStateCharacteristic != nullptr) {
+        // Convert times to seconds for the spec
+        unsigned long p1TimeSec = p1TimeMs / 1000;
+        unsigned long p2TimeSec = p2TimeMs / 1000;
 
-        char bleBuffer[64]; // Increased buffer size
-        snprintf(bleBuffer, sizeof(bleBuffer), "STATE:P%d:T1=%lu:T2=%lu",
-                 stateCode, p1TimeMs, p2TimeMs);
+        // Format according to BLE_SPECs.md
+        char bleBuffer[100]; // Increased buffer size for JSON
+        snprintf(bleBuffer, sizeof(bleBuffer), 
+                 "{\"player_moved\":%d,\"p1_time_sec\":%lu,\"p2_time_sec\":%lu}",
+                 playerMoved, p1TimeSec, p2TimeSec);
 
-        Serial.printf("Sending BLE Update: %s\n", bleBuffer);
+        Serial.printf("Sending BLE Update (JSON): %s\n", bleBuffer);
         pStateCharacteristic->setValue(bleBuffer);
         pStateCharacteristic->notify();
 
-        // --- Image Sending Logic REMOVED ---
-        /* if (playerMoved > 0 && playerMoved <= 2) { // Only take photo if P1 or P2 moved
-            takePhoto(); // Take photo after state update
-        } */
     } else {
-        Serial.println("Cannot send BLE update, no device connected.");
+        if (!deviceConnected) {
+             Serial.println("Cannot send BLE update, no device connected.");
+        } else {
+             Serial.println("Cannot send BLE update, characteristic invalid.");
+        }
     }
+    // Print message even if BLE is off, for debugging button presses - Keep this for logging
+    Serial.printf("Log: State Update Intent: playerMoved=%d, p1=%lu ms, p2=%lu ms\n", playerMoved, p1TimeMs, p2TimeMs);
 }
 
 // --- takePhoto Function REMOVED ---
@@ -481,9 +507,11 @@ void sendBleStateUpdate(int playerMoved, unsigned long p1TimeMs, unsigned long p
     ...
 } */
 
+#if USE_LCD
 void writeToLCD() {
-    // Implementation of writeToLCD function
+    // Implementation of writeToLCD function (only relevant if LCD enabled)
 }
+#endif
 
 // --- Request image from CAM and receive it over Serial2 ---
 size_t requestAndReceiveImage() {
@@ -575,4 +603,41 @@ size_t requestAndReceiveImage() {
   Serial.println("ERROR: Timeout waiting for CAM response!");
   Serial.printf(" (State: %d, SizeOK: %d, BytesRead: %zu / %zu)\n", recvState, sizeReceived, bytesRead, expectedSize);
   return 0; // Timeout error
+} 
+
+// --- Send Image Data over BLE --- 
+void sendImageOverBle(const uint8_t* buffer, size_t size) {
+    if (!deviceConnected || pStateCharacteristic == nullptr || buffer == nullptr || size == 0) {
+        Serial.println("ERROR: Cannot send image over BLE (disconnected, bad buffer, or zero size).");
+        return;
+    }
+
+    Serial.printf("Starting BLE image transfer (%zu bytes)...\n", size);
+
+    // 1. Send Start Marker: {"type":"image_start","size":<total_bytes>}
+    char startMarker[64];
+    snprintf(startMarker, sizeof(startMarker), "{\"type\":\"image_start\",\"size\":%zu}", size);
+    pStateCharacteristic->setValue(startMarker);
+    pStateCharacteristic->notify();
+    Serial.printf("Sent BLE Image Start: %s\n", startMarker);
+    delay(20); // Small delay after sending marker
+
+    // 2. Send Image Data Chunks
+    const size_t chunkSize = 20; // As per spec example
+    size_t bytesSent = 0;
+    while (bytesSent < size) {
+        size_t currentChunkSize = min(chunkSize, size - bytesSent);
+        pStateCharacteristic->setValue((uint8_t*)buffer + bytesSent, currentChunkSize);
+        pStateCharacteristic->notify();
+        bytesSent += currentChunkSize;
+        // Serial.printf("Sent %zu / %zu bytes\n", bytesSent, size); // Optional: Very verbose debug
+        delay(5); // Small delay between chunks to allow receiver processing time
+    }
+
+    // 3. Send End Marker: {"type":"image_end"}
+    char endMarker[] = "{\"type\":\"image_end\"}";
+    pStateCharacteristic->setValue(endMarker);
+    pStateCharacteristic->notify();
+    Serial.printf("Sent BLE Image End: %s\n", endMarker);
+    Serial.println("BLE image transfer complete.");
 } 
