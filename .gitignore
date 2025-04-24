@@ -1,0 +1,48 @@
+.pio
+.vscode/.browse.c_cpp.db*
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+.vscode/ipch
+
+# Flutter/Dart specific
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub/
+.pub-cache/
+
+# Flutter build outputs
+build/
+
+# Flutter generated files
+/ios/Flutter/Generated.xcconfig
+/android/app/src/main/assets/flutter_assets/*
+
+# Flutter state
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# IDE specific files
+.idea/
+.vscode/
+
+# Generated Plugin Registrant
+lib/generated_plugin_registrant.dart
+
+# Android build files
+/android/*.iml
+/android/.gradle/
+/android/local.properties
+/android/app/app.iml
+
+# iOS build files
+/ios/Pods/
+/ios/.symlinks/
+/ios/Flutter/App.framework
+/ios/Flutter/Flutter.framework
+/ios/Flutter/flutter_export_environment.sh
+/ios/Flutter/.last_build_id
+/ios/*.xcworkspace
+/ios/Runner.xcscheme
+/ios/Runner/GeneratedPluginRegistrant.*
