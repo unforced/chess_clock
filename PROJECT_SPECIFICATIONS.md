@@ -20,8 +20,8 @@ The system comprises three main components:
 ```mermaid
 sequenceDiagram
     participant User
-    participant Devkit (ESP32)
-    participant CAM (ESP32)
+    participant Devkit
+    participant CAM
     participant FlutterApp
     participant PythonServer
 
