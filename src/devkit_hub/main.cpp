@@ -9,7 +9,7 @@
 // #include "esp_camera.h" // <<< REMOVED Camera Header
 
 // --- Debugging Flags ---
-#define USE_LCD 0 // Set to 1 to enable LCD, 0 to disable
+#define USE_LCD 1 // Set to 1 to enable LCD, 0 to disable
 
 // --- Pin Definitions ---
 // Define button pins

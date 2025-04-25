@@ -1,5 +1,6 @@
 import sys
 import os
+import chess # Import chess here for FEN validation in app route
 
 # Add project root to path to find the 'vision' module and 'models' directory
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -12,7 +13,7 @@ import io
 
 # Import our vision modules (now relative to project_root)
 from vision.board_detector import find_and_warp_board, split_board_into_squares
-from vision.piece_recognizer import classify_square, load_model
+from vision.piece_recognizer import classify_square, load_model_weights
 from vision.fen_generator import generate_fen
 
 app = Flask(__name__)
@@ -27,7 +28,7 @@ if not os.path.exists(UPLOAD_FOLDER):
 # Model path relative to project root
 MODEL_PATH = os.path.join(project_root, 'models/model_weights.h5')
 if os.path.exists(MODEL_PATH):
-    load_model(MODEL_PATH)
+    load_model_weights(MODEL_PATH)
 else:
     print(f"\n*** WARNING: Model file not found at {MODEL_PATH} ***")
     print("*** Please download 'model_weights.h5' from https://github.com/Rizo-R/chess-cv ***")

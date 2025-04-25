@@ -1,6 +1,8 @@
 import numpy as np
 import cv2
-import tensorflow as tf # Use tensorflow directly
+import tensorflow as tf 
+from tensorflow import keras
+from tensorflow.keras import layers
 
 # Global variable to hold the loaded model
 piece_classifier_model = None
@@ -8,7 +10,11 @@ piece_classifier_model = None
 # Define the expected input size for the model (adjust if necessary based on model details)
 # The Rizo-R repo mentions training with 150x300, which seems odd for squares.
 # Let's assume a square input for now, e.g., 150x150. Needs verification.
-MODEL_INPUT_SIZE = (150, 150)
+# MODEL_INPUT_SIZE = (150, 150)
+# Update Input Size based on the original train.py
+MODEL_INPUT_SIZE = (300, 150)
+MODEL_INPUT_SHAPE = (MODEL_INPUT_SIZE[0], MODEL_INPUT_SIZE[1], 3) # Assuming color images (3 channels)
+NUM_CLASSES = 13 # 12 pieces + empty
 
 # Define the mapping from model output index to piece symbol
 # This needs to match the order used during training in Rizo-R/chess-cv
@@ -20,17 +26,53 @@ CLASS_MAP = {
     12: None # Empty square
 }
 
-def load_model(model_path: str):
-    """Loads the piece classification Keras model."""
+def build_model():
+    """Builds the Keras model architecture based on Rizo-R/chess-cv description."""
+    model = keras.Sequential(
+        [
+            keras.Input(shape=MODEL_INPUT_SHAPE),
+            # Layer 1
+            layers.Conv2D(16, kernel_size=(3, 3), activation="relu"),
+            layers.MaxPooling2D(pool_size=(2, 2)),
+            # Layer 2
+            layers.Conv2D(32, kernel_size=(3, 3), activation="relu"),
+            layers.MaxPooling2D(pool_size=(2, 2)),
+            # Layer 3
+            layers.Conv2D(64, kernel_size=(3, 3), activation="relu"),
+            layers.MaxPooling2D(pool_size=(2, 2)),
+            # Layer 4
+            layers.Conv2D(64, kernel_size=(3, 3), activation="relu"),
+            layers.MaxPooling2D(pool_size=(2, 2)),
+            # Layer 5 - Reverting to 64 filters as per original train.py
+            layers.Conv2D(64, kernel_size=(3, 3), activation="relu"),
+            layers.MaxPooling2D(pool_size=(2, 2)),
+            # Flatten the results to feed into a dense layer
+            layers.Flatten(),
+            # layers.Dropout(0.5), # REMOVE Dropout layer (not in original train.py)
+            # Dense layer - Input shape should now match weights due to correct input size
+            layers.Dense(128, activation="relu"),
+            layers.Dense(NUM_CLASSES, activation="softmax"),
+        ]
+    )
+    model.summary()
+    return model
+
+def load_model_weights(weights_path: str):
+    """Builds the model and loads weights from the specified path."""
     global piece_classifier_model
     try:
-        print(f"Loading Keras model from: {model_path}")
-        piece_classifier_model = tf.keras.models.load_model(model_path)
-        print("Model loaded successfully.")
-        # Optional: Print model summary
-        # piece_classifier_model.summary()
+        print("Building model architecture...")
+        piece_classifier_model = build_model()
+        print(f"Loading weights from: {weights_path}")
+        piece_classifier_model.load_weights(weights_path)
+        print("Model weights loaded successfully.")
+        # Perform a dummy prediction to finalize model build if needed
+        dummy_input = np.zeros((1,) + MODEL_INPUT_SHAPE)
+        _ = piece_classifier_model.predict(dummy_input)
+        print("Model ready.")
+
     except Exception as e:
-        print(f"Error loading Keras model: {e}")
+        print(f"Error building model or loading weights: {e}")
         piece_classifier_model = None
 
 def classify_square(square_image: np.ndarray) -> tuple[str | None, str | None]:

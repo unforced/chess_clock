@@ -1,5 +1,5 @@
-Flask
-opencv-python-headless
+tensorflow
+keras
 numpy
+opencv-contrib-python
 python-chess
-tensorflow 

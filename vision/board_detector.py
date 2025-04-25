@@ -1,5 +1,12 @@
 import cv2
 import numpy as np
+import os # Added for path operations
+import time # Added for unique filenames
+
+# Debug directory
+DEBUG_IMAGE_DIR = os.path.join(os.path.dirname(__file__), 'debug_images')
+if not os.path.exists(DEBUG_IMAGE_DIR):
+    os.makedirs(DEBUG_IMAGE_DIR)
 
 def order_points(pts):
     # initialzie a list of coordinates that will be ordered
@@ -56,8 +63,8 @@ def four_point_transform(image, pts):
 
 def find_and_warp_board(image: np.ndarray, output_size: int = 400) -> np.ndarray | None:
     """
-    Finds the largest square contour in the image, assumes it's the chessboard,
-    and returns a warped, top-down view.
+    Finds the largest contour in the image, attempts to find a 4-point approximation
+    (preferring the convex hull), and returns a warped, top-down view.
 
     Args:
         image: Input image (NumPy array).
@@ -66,42 +73,106 @@ def find_and_warp_board(image: np.ndarray, output_size: int = 400) -> np.ndarray
     Returns:
         A warped square image of the board, or None if no board is found.
     """
+    timestamp = time.strftime("%Y%m%d-%H%M%S") # For unique filenames
+
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    # Use adaptive thresholding to handle varying lighting conditions
     thresh = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                    cv2.THRESH_BINARY_INV, 11, 2)
 
-    # Find contours
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     if not contours:
         print("No contours found")
         return None
 
-    # Find the largest contour which we assume is the board outline
     largest_contour = max(contours, key=cv2.contourArea)
 
-    # Approximate the contour to a polygon
-    peri = cv2.arcLength(largest_contour, True)
-    approx = cv2.approxPolyDP(largest_contour, 0.02 * peri, True)
+    # --- Parameters for approximation ---
+    epsilon_factor = 0.03 # Tolerance for approxPolyDP
 
-    # Check if the approximated contour has 4 points (a quadrilateral)
-    if len(approx) == 4:
-        corners = approx.reshape(4, 2)
+    corners = None
+    approx_hull = None
+    approx_orig = None
 
-        # Warp the perspective
+    # --- 1. Try approximating the Convex Hull ---
+    hull = cv2.convexHull(largest_contour)
+    peri_hull = cv2.arcLength(hull, True)
+    if peri_hull > 0: # Avoid division by zero if hull is degenerate
+        approx_hull = cv2.approxPolyDP(hull, epsilon_factor * peri_hull, True)
+        if len(approx_hull) == 4:
+            print("Using 4 points found from convex hull approximation.")
+            corners = approx_hull.reshape(4, 2)
+        else:
+            print(f"Convex hull approximation yielded {len(approx_hull)} points. Trying original contour.")
+    else:
+         print("Convex hull has zero perimeter. Trying original contour.")
+
+
+    # --- 2. Fallback: Approximate the Original Contour (if hull didn't work) ---
+    if corners is None:
+        peri_orig = cv2.arcLength(largest_contour, True)
+        if peri_orig > 0: # Avoid division by zero
+            approx_orig = cv2.approxPolyDP(largest_contour, epsilon_factor * peri_orig, True)
+            if len(approx_orig) == 4:
+                print("Using 4 points found from original contour approximation.")
+                corners = approx_orig.reshape(4, 2)
+            else:
+                 print(f"Original contour approximation yielded {len(approx_orig)} points.")
+        else:
+            print("Original contour has zero perimeter.")
+
+
+    # --- Process the result ---
+    if corners is not None:
+        # Warp the perspective using the found corners
         warped = four_point_transform(image, corners.astype(np.float32))
-
-        # Resize to a standard size
         resized_warped = cv2.resize(warped, (output_size, output_size))
+
+        # --- Optional: Save successful debug image ---
+        # img_success = image.copy()
+        # cv2.drawContours(img_success, [corners.reshape(-1, 1, 2)], -1, (0, 255, 0), 2) # Draw successful corners in green
+        # cv2.imwrite(os.path.join(DEBUG_IMAGE_DIR, f'{timestamp}_04_success_corners.png'), img_success)
+        # -------------------------------------------
         return resized_warped
     else:
-        print(f"Largest contour found is not a quadrilateral (found {len(approx)} points). Cannot warp.")
-        # Optional: Draw the largest contour for debugging
-        # cv2.drawContours(image, [largest_contour], -1, (0, 255, 0), 3)
-        # cv2.imshow("Largest Contour", image)
-        # cv2.waitKey(0)
+        # --- FAILURE: Save comprehensive debug images ---
+        print(f"Could not find a 4-point approximation. Saving debug images to {DEBUG_IMAGE_DIR}")
+        cv2.imwrite(os.path.join(DEBUG_IMAGE_DIR, f'{timestamp}_00_original.png'), image)
+        cv2.imwrite(os.path.join(DEBUG_IMAGE_DIR, f'{timestamp}_01_thresh.png'), thresh)
+
+        img_with_contours = image.copy()
+        cv2.drawContours(img_with_contours, contours, -1, (0, 255, 0), 1) # All contours green
+        cv2.imwrite(os.path.join(DEBUG_IMAGE_DIR, f'{timestamp}_02_all_contours.png'), img_with_contours)
+
+        img_with_attempts = image.copy()
+        # Draw largest contour (red)
+        cv2.drawContours(img_with_attempts, [largest_contour], -1, (0, 0, 255), 2)
+        # Draw convex hull (cyan)
+        if hull is not None:
+             cv2.drawContours(img_with_attempts, [hull], -1, (255, 255, 0), 1)
+        # Draw hull approximation (yellow, if exists and != 4 points)
+        if approx_hull is not None and len(approx_hull) != 4:
+             cv2.drawContours(img_with_attempts, [approx_hull], -1, (0, 255, 255), 2)
+             hull_pts = len(approx_hull)
+        else:
+             hull_pts = 'N/A' if approx_hull is None else 4
+        # Draw original approximation (blue, if exists and != 4 points)
+        if approx_orig is not None and len(approx_orig) != 4:
+            cv2.drawContours(img_with_attempts, [approx_orig], -1, (255, 0, 0), 2)
+            orig_pts = len(approx_orig)
+        else:
+             orig_pts = 'N/A' if approx_orig is None else 4
+
+        # Add text overlay with point counts
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(img_with_attempts, f'LargestContour (Red)', (10, 30), font, 0.6, (0,0,255), 2)
+        cv2.putText(img_with_attempts, f'Hull (Cyan)', (10, 50), font, 0.6, (255,255,0), 2)
+        cv2.putText(img_with_attempts, f'ApproxHull Pts: {hull_pts} (Yellow if !=4)', (10, 70), font, 0.6, (0,255,255), 2)
+        cv2.putText(img_with_attempts, f'ApproxOrig Pts: {orig_pts} (Blue if !=4)', (10, 90), font, 0.6, (255,0,0), 2)
+
+        cv2.imwrite(os.path.join(DEBUG_IMAGE_DIR, f'{timestamp}_03_attempts_hull{hull_pts}_orig{orig_pts}.png'), img_with_attempts)
+        # ------------------------------------
         return None
 
 def split_board_into_squares(board_image: np.ndarray, board_size: int = 8) -> list[np.ndarray]:
