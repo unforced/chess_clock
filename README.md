@@ -76,9 +76,21 @@ Refer to the detailed setup instructions for each component in the `PROJECT_SPEC
 7.  As players press their buttons, the app will update with the times, show the captured image, and display the recognized board state (FEN).
 8.  View the turn history by scrolling down in the app.
 
+## Device Render
+
+*(AI Generated Render based on 3D Model Specifications)*
+
+![Chess Clock Render](docs/chess_clock_render.png)
+
+## Documentation & Specifications
+
+*   **Project Specifications:** [`docs/PROJECT_SPECS.md`](docs/PROJECT_SPECS.md) - Detailed technical documentation of the entire system.
+*   **BLE Specification:** [`docs/BLE_SPECS.md`](docs/BLE_SPECS.md) - Defines the BLE communication protocol.
+*   **3D Model Specifications:** [`docs/3D_MODEL_SPECS.md`](docs/3D_MODEL_SPECS.md) - Detailed specs for the 3D printable enclosure.
+
 ## Circuit Schematic
 
-(Refer to `PROJECT_SPECIFICATIONS.md`, Section 3.2 for detailed pin connections)
+(Refer to `PROJECT_SPECS.md`, Section 3.2 for detailed pin connections)
 
 *   Buttons -> ESP32 Devkit (GPIO 4, 18, 19)
 *   I2C LCD -> ESP32 Devkit (GPIO 21 SDA, 22 SCL)
